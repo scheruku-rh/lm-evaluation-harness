@@ -1,0 +1,82 @@
+name: Generate Dataset Mapping
+
+on:
+  schedule:
+    - cron: '0 7 * * 1'
+  push:
+    branches:
+      - incubation
+    paths:
+      - 'lm_eval/tasks/**/*.yaml'
+  workflow_dispatch:
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: incubation
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install pyyaml
+
+      - name: Generate dataset mapping table
+        run: |
+          python - << 'EOF'
+          import yaml
+          from pathlib import Path
+
+          TASKS_DIR = Path("lm_eval/tasks")
+          OUTPUT_FILE = Path("docs/dataset-mapping.md")
+
+          rows = []
+          for yaml_file in sorted(TASKS_DIR.rglob("*.yaml")):
+              try:
+                  data = yaml.safe_load(yaml_file.read_text())
+              except Exception:
+                  continue
+              if not isinstance(data, dict) or not data.get("dataset_path"):
+                  continue
+              task = data.get("task", "")
+              path = data["dataset_path"]
+              name = data.get("dataset_name", "")
+              if isinstance(task, list):
+                  for t in task:
+                      rows.append((str(t), path, name))
+              else:
+                  rows.append((str(task), path, name))
+
+          rows.sort(key=lambda r: r[0])
+          OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
+          with open(OUTPUT_FILE, "w") as f:
+              f.write("# Benchmark Dataset Mapping\n\n")
+              f.write("Auto-generated from `lm_eval/tasks/**/*.yaml`. Do not edit manually.\n\n")
+              f.write("Use **HuggingFace Dataset Path** and **Subset** to pre-download datasets for air-gapped evaluation jobs.\n\n")
+              f.write("| Benchmark | HuggingFace Dataset Path | Subset |\n")
+              f.write("|-----------|--------------------------|--------|\n")
+              for task, path, name in rows:
+                  f.write(f"| `{task}` | `{path}` | `{name}` |\n")
+          print(f"Written {len(rows)} benchmarks to {OUTPUT_FILE}")
+          EOF
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/dataset-mapping.md
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "chore: update benchmark dataset mapping table [skip ci]"
+            git push
+          fi
