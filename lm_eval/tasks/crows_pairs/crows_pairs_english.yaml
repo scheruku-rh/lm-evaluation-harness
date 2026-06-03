@@ -3,6 +3,8 @@ tag:
 task: crows_pairs_english
 dataset_path: BigScienceBiasEval/crows_pairs_multilingual
 dataset_name: english
+dataset_kwargs:
+  trust_remote_code: true
 test_split: test
 output_type: multiple_choice
 doc_to_text: ""
