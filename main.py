@@ -37,6 +37,16 @@ _TEST_DATA_DIR = "/test_data"
 # EvalHub mounts the job spec JSON under this directory only; reject other paths (CWE-22).
 _JOB_SPEC_ALLOWED_ROOT = Path("/meta")
 
+# Benchmarks whose HuggingFace datasets use custom loading scripts and require trust_remote_code.
+# Remove an entry here once the dataset is converted to parquet on the Hub.
+_BENCHMARKS_REQUIRING_REMOTE_CODE: frozenset[str] = frozenset({
+    "ethics_cm",
+})
+
+
+def _needs_trust_remote_code(benchmark_id: str) -> bool:
+    return benchmark_id in _BENCHMARKS_REQUIRING_REMOTE_CODE
+
 
 def _resolve_job_spec_path_for_read(path: str) -> Path | None:
     """Return a resolved path to open, or None if ``path`` is invalid or escapes ``/meta``."""
@@ -562,6 +572,12 @@ class LMEvalAdapter(FrameworkAdapter):
                     message=_status_message(f"Running evaluation on {model_name}"),
                 )
             )
+
+            # Some datasets use custom HF loading scripts and require trust_remote_code.
+            if _needs_trust_remote_code(benchmark_id):
+                import datasets as _datasets
+                _datasets.config.HF_DATASETS_TRUST_REMOTE_CODE = True
+                logger.info("trust_remote_code enabled for benchmark %s", benchmark_id)
 
             # Run evaluation based on job spec
             # Note: batch_size is passed in model_args for local-completions backend
